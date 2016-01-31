@@ -1,0 +1,175 @@
+---
+
+### x_ are macros
+
+###############
+### PROJECT
+- project:
+    name: 'cfgmgmtcamp_jenkins_a_la_travis'
+    small_name: 'jenkins_a_la_travis'
+    project_version: '1.0.0'
+    giturl: https://github.com/Mindera/cfgmgmtcamp_jenkinsalatravis.git
+    test_env:
+      - dev:
+          next: mock-te
+      - mock:
+          next: qa-te
+      - qa:
+          next: staging
+    env:
+       - staging:
+          next: production
+       - production
+
+    jobs:
+      - '{name}-build'
+      - '{name}-make-image'
+      - '{name}-{test_env}-te-deploy'
+      - '{name}-{test_env}-te-test'
+      - '{name}-{env}-deploy'
+
+
+###############
+### DEFAULTS
+- defaults:
+    name: global
+    description: 'Do NOT edit this job through the web! '
+    project-type: freestyle
+    wrappers:
+      - timestamps
+
+
+###############
+### TEMPLATES
+
+# Build
+- job-template:
+    name: "{name}-build"
+    display-name:  "{small_name}-build"
+    properties:
+      - x_pipeline__build
+
+    wrappers:
+      - timestamps
+      - delivery-pipeline:
+          version-template: '{project_version}-$BUILD_NUMBER'
+          set-display-name: true
+
+    scm:
+      - git_shallow_clone_v2:
+          url: '{giturl}'
+          excluded-region: '.jenkins'
+
+    triggers:
+      - pollscm: "H/1 * * * *"
+
+    builders:
+      - shell: |
+          echo "It could be maven... npm... or whatever you want"
+          sh build_script.sh
+
+    publishers:
+      - x_trigger_next_on_success_v1:
+          job: '{name}-make-image'
+
+
+#### Make image
+- job-template:
+    name: "{name}-make-image"
+    display-name:  "{small_name}-make-image"
+
+    parameters:
+      - string:
+          name: PIPELINE_VERSION
+
+    properties:
+      - delivery-pipeline:
+          stage: Build
+          task: Make image
+
+    # scm:
+        #   - git_shallow_clone_v1:
+        #       url: Some url
+
+    builders:
+      - shell: |
+           echo "chef-client -o cookbook_make_image"
+
+    publishers:
+      - x_trigger_next_on_success_v1:
+          job: '{name}-dev-te-deploy'
+
+
+#### Deploy to test environment
+- job-template:
+    name: "{name}-{test_env}-te-deploy"
+    display-name:  "{small_name}-{test_env}-te-deploy"
+
+    parameters:
+      - string:
+          name: PIPELINE_VERSION
+
+    properties:
+      - x_pipeline__{test_env}_deploy
+
+    # scm:
+        #   - git_shallow_clone_v1:
+        #       url: Some url
+
+    builders:
+      - shell: |
+          echo "ENV={test_env} chef-client -o cookbook_deploy"
+
+    publishers:
+      - trigger:
+          project: "{name}-{test_env}-te-test"
+
+
+#### Test environment
+- job-template:
+    name: "{name}-{test_env}-te-test"
+    display-name:  "{small_name}-{test_env}-te-test"
+
+    parameters:
+      - string:
+          name: PIPELINE_VERSION
+
+    properties:
+      - x_pipeline__{test_env}_test
+
+    scm:
+      - git_shallow_clone_v2:
+          url: '{giturl}'
+          excluded-region: '.jenkins'
+
+    builders:
+      - shell: |
+          echo "ENV={test_env} testing_script.sh"
+
+    publishers:
+      - trigger:
+          project: "{name}-{next}-deploy"
+
+#### Deploy
+- job-template:
+    name: "{name}-{env}-deploy"
+    display-name:  "{small_name}-{env}-deploy"
+
+    parameters:
+      - string:
+          name: PIPELINE_VERSION
+
+    properties:
+      - x_pipeline__{env}_deploy
+
+    # scm:
+    #   - git_shallow_clone_v1:
+    #       url: Some url
+
+    builders:
+      - shell: |
+          echo "ENV={env} chef-client -o cookbook_deploy"
+
+    publishers:
+      - x_manual_trigger_v1:
+          job: "{name}-{next}-deploy"

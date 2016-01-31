@@ -1,0 +1,20 @@
+---
+
+- view:
+    type: nested
+    name: jenkins_a_la_travis
+    defaultView: all
+    views:
+      - view:
+          type: list
+          name: all
+          includeRegex: cfgmgmtcamp_jenkins_a_la_travis-.*
+
+      - view:
+          type: pipeline
+          name: cdpipeline
+          title: Jenkins à la Travis Pipeline
+          first_job: cfgmgmtcamp_jenkins_a_la_travis-build
+          no_of_displayed_builds: 5
+          refresh_frequency: 5
+          always_allow_manual_trigger: True
